@@ -356,7 +356,7 @@ type WttrPayload struct { // auto-generated via https://mholt.github.io/json-to-
 	} `json:"weather"`
 }
 
-type OpenWeatherPayload struct {
+type OpenWeatherPayload struct { // auto-generated via https://mholt.github.io/json-to-go/
 	Coord struct {
 		Lon float64 `json:"lon"`
 		Lat float64 `json:"lat"`
