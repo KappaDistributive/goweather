@@ -8,48 +8,72 @@ import (
 )
 
 type WeatherData struct {
-	temperature      float64 // Kelvin
-	pressure         float64 // Pascal
-	relativeHumidity float64 // in percentage
-	icon             string
-	format           string
+	Temperature      float64 // Kelvin
+	Pressure         float64 // Pascal
+	RelativeHumidity float64 // in percentage
+	WindSpeed        float64 // in m/s
+	Area             string
+	Icon             string
+	Format           string
 }
 
 func (w WeatherData) String() string {
-	result := w.format
+	result := w.Format
 
 	// icon
-	result = strings.ReplaceAll(result, "%c", w.icon)
+	result = strings.ReplaceAll(result, "%c", w.Icon)
 
 	// humidity
-	re := regexp.MustCompile(`\%h(?P<format>(?:\d*\.\d*f)?)`)
+	re := regexp.MustCompile(`\%h(?P<unit>(?: ?))(?P<format>(?:\d*\.\d*f)?)`)
 	subMatchMap, err := GetSubMatchMap(re, result)
 	if err != nil {
 		return ""
 	}
 
-	humidity_format := "%.0f"
-	if subMatchMap["format"] != "" {
-		humidity_format = "%" + subMatchMap["format"]
+	humidity_format := "%.0f%%"
+	if strings.TrimSpace(subMatchMap["format"]) != "" {
+		humidity_format = "%" + strings.ReplaceAll(subMatchMap["format"], "%", "%%")
 	}
-	result = re.ReplaceAllString(result, fmt.Sprintf(humidity_format, w.relativeHumidity)+"%")
+	result = re.ReplaceAllString(result, fmt.Sprintf(humidity_format+subMatchMap["unit"], w.RelativeHumidity))
 
 	// temperature
-	re = regexp.MustCompile(`\%t(?P<unit>(?:°C|K))(?P<format>(?:\d*\.\d*f)?)`)
+	re = regexp.MustCompile(`\%t(?P<unit>(?: ?(?:°C|K)))(?P<format>(?:\d*\.\d*f)?)`)
 	subMatchMap, err = GetSubMatchMap(re, result)
 	if err != nil {
 		return ""
 	}
-	temperature := w.temperature
+	temperature := w.Temperature
 	if subMatchMap["unit"] == "°C" {
 		temperature -= 273.15
 	}
 	temperature_format := "%.1f"
-	if subMatchMap["format"] != "" {
+	if strings.TrimSpace(subMatchMap["format"]) != "" {
 		temperature_format = "%" + subMatchMap["format"]
 	}
-
 	result = re.ReplaceAllString(result, fmt.Sprintf(temperature_format+subMatchMap["unit"], temperature))
+
+	// wind
+	re = regexp.MustCompile(`\%w(?P<unit>(?: ?(?:m/s|km/h|m/h|mph)))(?P<format>(?:\d*\.\d*f)?)`)
+	subMatchMap, err = GetSubMatchMap(re, result)
+	if err != nil {
+		return ""
+	}
+	wind := w.WindSpeed
+	if strings.TrimSpace(subMatchMap["unit"]) == "km/h" {
+		wind *= 3.6
+	}
+	if (strings.TrimSpace(subMatchMap["unit"]) == "m/h") || (strings.TrimSpace(subMatchMap["unit"]) == "mph") {
+		wind *= 2.236936
+	}
+
+	wind_format := "%.1f"
+	if strings.TrimSpace(subMatchMap["format"]) != "" {
+		wind_format = "%" + subMatchMap["format"]
+	}
+	result = re.ReplaceAllString(result, fmt.Sprintf(wind_format+subMatchMap["unit"], wind))
+
+	// area
+	result = strings.ReplaceAll(result, "%l", w.Area)
 
 	return result
 }
@@ -177,11 +201,15 @@ func (data WttrPayload) createWeather(format string) WeatherData {
 	pressure, _ := strconv.ParseFloat(data.CurrentCondition[0].Pressure, 64)
 	pressure *= 1000.
 	humidity, _ := strconv.ParseFloat(data.CurrentCondition[0].Humidity, 64)
+	wind, _ := strconv.ParseFloat(data.CurrentCondition[0].WindspeedKmph, 64)
+	wind /= 3.6
 	icon := wttrCodeToIcon(data.CurrentCondition[0].WeatherCode)
 	return WeatherData{
 		temperature,
 		pressure,
 		humidity,
+		wind,
+		data.NearestArea[0].AreaName[0].Value,
 		icon,
 		format,
 	}
@@ -385,6 +413,8 @@ func (data OpenWeatherPayload) createWeather(format string) WeatherData {
 		data.Main.Temp,
 		float64(data.Main.Pressure) * 1000.,
 		float64(data.Main.Humidity),
+		data.Wind.Speed,
+		data.Name,
 		openWeatherIconToEmoji(data.Weather[0].Icon),
 		format,
 	}
